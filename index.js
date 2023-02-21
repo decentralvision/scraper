@@ -2,7 +2,6 @@
 const puppeteer = require('puppeteer-extra')
 const {executablePath} = require('puppeteer')
 const StealthPlugin = require('puppeteer-extra-plugin-stealth')
-const userAgent = require('user-agents');
 const { convertArrayToCSV } = require('convert-array-to-csv');
 const fs = require('fs')
 const {FingerprintInjector} = require('fingerprint-injector')
@@ -11,7 +10,12 @@ const {FingerprintGenerator} = require('fingerprint-generator')
 // const useProxy = require('puppeteer-page-proxy')
 // const proxyRouter = require('@extra/proxy-router')
 // const axios = require('axios')
+
+// the only setting
 const state = 'tx'
+
+
+let cities = []
 numOfPages = 25;
 // const proxy = 'https://TRCAUJDA3JWYVW1F4LE0IS9AAQAPIEL0A9CT0CFAVPIBHDOQALATA7BDGWTSJ3WHS1F2EO6SU6EWM7PI:render_js=false@proxy.scrapingbee.com:8887'
 // relevant variables to change to adjust results
@@ -46,15 +50,31 @@ const checkForCaptcha = async (page) => {
   return captchaPresent
 }
 
-const bypassCaptcha = async (page, url) => {
-  console.log(await checkForCaptcha(page))
+const bypassCaptcha = async (browser, page, url) => {
+  console.log(`captcha present? ${await checkForCaptcha(page)}`)
   let captchaPresent = await checkForCaptcha(page)
+  let tryNumber = 0
     while (captchaPresent == true) {
-      // await page.setUserAgent(userAgent.toString())
+      console.log(`try number: ${tryNumber}`)
+      if (tryNumber >= 3) {
+        console.log(`three tries deep throwing them off the trail ;)`)
+        browser.close()
+        browser = await puppeteer.launch({ headless: false, executablePath: executablePath()})
+        page = await browser.newPage()
+      }
+      console.log('getting a new browser fingerprint')
+      const browserFingerprintWithHeaders = fingerprintGenerator.getFingerprint({
+        devices: ['mobile', 'desktop'],
+        browsers: ['chrome', 'firefox', 'safari', 'edge'],
+      })
+      const decoyCityNumber = Math.floor(getRandomArbitrary(0,100))
+      console.log('attaching new fingerprint')
       await fingerprintInjector.attachFingerprintToPuppeteer(page, browserFingerprintWithHeaders)
-      await page.goto(url)
-      const xOffset = getRandomArbitrary(25,150)
-      const yOffset = getRandomArbitrary(10, 75)
+      console.log('visiting random page')
+      await page.goto(`https://www.zillow.com/professionals/listing-agent--real-estate-agent-reviews/${cities[decoyCityNumber]}-${state}`)
+      await page.waitForTimeout(5000)
+      const xOffset = await getRandomArbitrary(25,150)
+      const yOffset = await getRandomArbitrary(10, 75)
       console.log('captcha detected')
       try {
         const rect = await page.$eval('#px-captcha', el => {
@@ -64,24 +84,26 @@ const bypassCaptcha = async (page, url) => {
         const offset = {x: xOffset, y: yOffset};
         await page.waitForTimeout(2000)
         await page.mouse.click(rect.x + offset.x, rect.y + offset.y, {
-          delay: 10000
+          delay: 12000
           });
         await page.waitForTimeout(5000)
         captchaPresent = true
       } catch { console.log('captcha solved'); captchaPresent=false}
+      tryNumber++
+      await page.goto(url)
   }
 }
 
 const getCities = async () => {
   const browser = await puppeteer.launch({ headless: false, executablePath: executablePath() })
   const page = await browser.newPage()
-  await page.setViewport({ width: 1920, height: 1080 })
-  
+
   await page.goto(`https://www.biggestuscities.com/${state}`)
   // await page.waitForTimeout(2000)
   await page.waitForSelector('.big')
   const citiesList = await page.$$eval('.big', node => node.map(el => el.innerText))
   await browser.close()
+  cities = citiesList
   return citiesList
 }
 
@@ -102,43 +124,33 @@ const scrapeCity = async (city) => {
   // const wsChromeEndpointurl = 'wss://chrome.browserless.io?token=6630a6b0-a5c6-4939-b87e-3d7cd11ed955'
   // const browser = await puppeteer.connect({browserWSEndpoint: wsChromeEndpointurl})
   const browser = await puppeteer.launch({ headless: false, executablePath: executablePath()})
-  // const browser = await browserTemplate.createIncognitoBrowserContext();
   const page = await browser.newPage()
   await fingerprintInjector.attachFingerprintToPuppeteer(page, browserFingerprintWithHeaders)
   const url = `https://www.zillow.com/professionals/listing-agent--real-estate-agent-reviews/${city}-${state}`
-  // await useProxy(page, proxy);
   await page.goto(url)
-  await bypassCaptcha(page, url)
+  await bypassCaptcha(browser, page, url)
   // cycle through specialties
   const cityAgents = []
   for(s=0;s<specialties.length;s++){
     // cycle through the available 25 pages
     for(i=1;i<numOfPages+1;i++){
       const api_url = `https://www.zillow.com/professionals/api/v2/search/?profileType=2&page=${i}&locationText=${city}%20${state}&language=English&specialty=${specialties[s]}`
-      console.log('attempting to navigate to url')
-      // await new Promise(r => setTimeout(r, 2000));
-      // await fetch(api_url)
-      // .then(response => response.json())
-      // .then(json => console.log(json.results))
-      // using puppeteer
-      // await useProxy(page, proxy);
       await page.goto(api_url)
-      await bypassCaptcha(page, api_url)
+      await bypassCaptcha(browser, page, api_url)
       console.log('scraping page')
       await page.waitForSelector('pre')
       const pageContent = await page.$eval('pre', node => JSON.parse(node.innerText));
       const professionals = pageContent.results.professionals
       professionals.forEach(professional => {const formattedProfessional = [professional.fullName, professional.businessName, professional.location, professional.phoneNumber, specialties[s]]; cityAgents.push(formattedProfessional)}) 
-      console.log(cityAgents)
+      console.log(`agents collected: ${cityAgents.length}`)
     }
   }
   return cityAgents
 }
 
 const scrape = async () => {
-  const cities = await getCities();
-  console.log(`scraping cities:${cities}`);
-  const citiesSlice = cities.slice(1,2)
+  await getCities();
+  const citiesSlice = cities.slice(0,1)
   console.log(citiesSlice[0])
   const stateAgents = await scrapeCities(citiesSlice);
   const header = ['name', 'group', 'region', 'phone', 'agent type']
@@ -147,7 +159,7 @@ const scrape = async () => {
     separator: ','
     });
     console.log(val)
-    fs.writeFile(`agents${citiesSlice[0]}.csv`, val, (err) => {
+    fs.writeFile(`Zillow.com - ${citiesSlice[0]} - agents.csv`, val, (err) => {
           if (err) throw err;
           console.log('The file has been saved!');
         });  

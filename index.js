@@ -39,7 +39,7 @@ function getRandomArbitrary(min, max) {
 
 const checkForCaptcha = async (page) => {
   try {
-    await page.waitForTimeout(2000)
+    // await page.waitForTimeout(1000)
     await page.$eval('#px-captcha', el =>{
       return el
     })
@@ -91,7 +91,8 @@ const bypassCaptcha = async (browser, page, url) => {
       } catch { console.log('captcha solved'); captchaPresent=false}
       tryNumber++
       await page.goto(url)
-  }
+    }
+  return browser, page
 }
 
 const getCities = async () => {
@@ -123,12 +124,12 @@ const scrapeCity = async (city) => {
   const specialties = ['BuyersAgent', 'ListingAgent', 'Foreclosure', 'Relocation', 'ShortSale', 'Consulting', 'Other']
   // const wsChromeEndpointurl = 'wss://chrome.browserless.io?token=6630a6b0-a5c6-4939-b87e-3d7cd11ed955'
   // const browser = await puppeteer.connect({browserWSEndpoint: wsChromeEndpointurl})
-  const browser = await puppeteer.launch({ headless: false, executablePath: executablePath()})
-  const page = await browser.newPage()
+  let browser = await puppeteer.launch({ headless: false, executablePath: executablePath()})
+  let page = await browser.newPage()
   await fingerprintInjector.attachFingerprintToPuppeteer(page, browserFingerprintWithHeaders)
   const url = `https://www.zillow.com/professionals/listing-agent--real-estate-agent-reviews/${city}-${state}`
   await page.goto(url)
-  await bypassCaptcha(browser, page, url)
+  browser, page = await bypassCaptcha(browser, page, url)
   // cycle through specialties
   const cityAgents = []
   for(s=0;s<specialties.length;s++){
@@ -136,7 +137,7 @@ const scrapeCity = async (city) => {
     for(i=1;i<numOfPages+1;i++){
       const api_url = `https://www.zillow.com/professionals/api/v2/search/?profileType=2&page=${i}&locationText=${city}%20${state}&language=English&specialty=${specialties[s]}`
       await page.goto(api_url)
-      await bypassCaptcha(browser, page, api_url)
+      browser, page = await bypassCaptcha(browser, page, api_url)
       console.log('scraping page')
       await page.waitForSelector('pre')
       const pageContent = await page.$eval('pre', node => JSON.parse(node.innerText));
@@ -150,7 +151,7 @@ const scrapeCity = async (city) => {
 
 const scrape = async () => {
   await getCities();
-  const citiesSlice = cities.slice(0,1)
+  const citiesSlice = cities.slice(2,3)
   console.log(citiesSlice[0])
   const stateAgents = await scrapeCities(citiesSlice);
   const header = ['name', 'group', 'region', 'phone', 'agent type']

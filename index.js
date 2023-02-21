@@ -5,7 +5,10 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth')
 const userAgent = require('user-agents');
 const { convertArrayToCSV } = require('convert-array-to-csv');
 const fs = require('fs')
-const useProxy = require('puppeteer-page-proxy')
+const {FingerprintInjector} = require('fingerprint-injector')
+const {FingerprintGenerator} = require('fingerprint-generator')
+
+// const useProxy = require('puppeteer-page-proxy')
 // const proxyRouter = require('@extra/proxy-router')
 // const axios = require('axios')
 const state = 'tx'
@@ -13,6 +16,13 @@ numOfPages = 25;
 // const proxy = 'https://TRCAUJDA3JWYVW1F4LE0IS9AAQAPIEL0A9CT0CFAVPIBHDOQALATA7BDGWTSJ3WHS1F2EO6SU6EWM7PI:render_js=false@proxy.scrapingbee.com:8887'
 // relevant variables to change to adjust results
 puppeteer.use(StealthPlugin())
+const fingerprintGenerator = new FingerprintGenerator();
+const browserFingerprintWithHeaders = fingerprintGenerator.getFingerprint({
+  devices: ['mobile'],
+  browsers: ['chrome'],
+})
+const fingerprintInjector = new FingerprintInjector();
+
 // puppeteer.use(
 //   proxyRouter({
 //     proxies: { DEFAULT: 'http://TRCAUJDA3JWYVW1F4LE0IS9AAQAPIEL0A9CT0CFAVPIBHDOQALATA7BDGWTSJ3WHS1F2EO6SU6EWM7PI:render_js=false@proxy.scrapingbee.com:8886' },
@@ -41,6 +51,7 @@ const bypassCaptcha = async (page, url) => {
   let captchaPresent = await checkForCaptcha(page)
     while (captchaPresent == true) {
       // await page.setUserAgent(userAgent.toString())
+      await fingerprintInjector.attachFingerprintToPuppeteer(page, browserFingerprintWithHeaders)
       await page.goto(url)
       const xOffset = getRandomArbitrary(25,150)
       const yOffset = getRandomArbitrary(10, 75)
@@ -93,8 +104,7 @@ const scrapeCity = async (city) => {
   const browser = await puppeteer.launch({ headless: false, executablePath: executablePath()})
   // const browser = await browserTemplate.createIncognitoBrowserContext();
   const page = await browser.newPage()
-  await page.setViewport({ width: 1020, height: 900 })
-  await page.setUserAgent(userAgent.toString())
+  await fingerprintInjector.attachFingerprintToPuppeteer(page, browserFingerprintWithHeaders)
   const url = `https://www.zillow.com/professionals/listing-agent--real-estate-agent-reviews/${city}-${state}`
   // await useProxy(page, proxy);
   await page.goto(url)
